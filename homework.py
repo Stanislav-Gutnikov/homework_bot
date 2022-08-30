@@ -43,7 +43,7 @@ HOMEWORK_STATUSES = {
 
 
 def send_message(bot, message):
-    '''Отправляем сообщение в телеграме'''
+    """Отправляем сообщение в телеграме."""
     try:
         bot.send_message(TELEGRAM_CHAT_ID, message)
     except TelegramMessageError as error:
@@ -54,7 +54,7 @@ def send_message(bot, message):
 
 
 def get_api_answer(current_timestamp):
-    '''Обращаемся к серверу Практикума и получаем ответ'''
+    """Обращаемся к серверу Практикума и получаем ответ."""
     timestamp = current_timestamp or int(time.time())
     params = {'from_date': timestamp}
     try:
@@ -71,7 +71,7 @@ def get_api_answer(current_timestamp):
 
 
 def check_response(response):
-    '''Проверяем, собержит ли ответ ожидаемую информацию'''
+    """Проверяем, собержит ли ответ ожидаемую информацию."""
     try:
         hw_list = response['homeworks']
     except KeyError as error:
@@ -90,8 +90,7 @@ def check_response(response):
 
 
 def parse_status(homework):
-    '''Присваеваем статус домашке,
-       основываясь на информации из ответа с сервера'''
+    """Присваеваем статус домашке."""
     homework_name = homework['homework_name']
     homework_status = homework['status']
     if homework_status == 'approved':
@@ -108,8 +107,7 @@ def parse_status(homework):
 
 
 def check_tokens():
-    '''ОПроверяем, есть ли переменные окружения,
-       нужные для работы бота'''
+    """Проверяем, есть ли переменные окружения."""
     if not PRACTICUM_TOKEN:
         message = ("Отсутствует обязательная переменная окружения: "
                    "'PRACTICUM_TOKEN'")
