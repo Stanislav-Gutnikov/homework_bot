@@ -9,12 +9,8 @@ from http import HTTPStatus
 
 from exceptions import (
     TelegramMessageError,
-    MainFuncError,
     EndpointError,
-    DictKeysError,
-    DictNoneError,
-    NotListError,
-    HomeworkStatusError,
+    HomeworksNotFound,
     RequestExceptionError
 )
 
@@ -44,6 +40,8 @@ HOMEWORK_STATUSES = {
 
 def send_message(bot, message):
     """Отправляем сообщение в телеграме."""
+    info_message = f'Начинаем отправку сообщения "{message}"'
+    logger.info(info_message)
     try:
         bot.send_message(TELEGRAM_CHAT_ID, message)
     except TelegramMessageError as error:
@@ -57,85 +55,65 @@ def get_api_answer(current_timestamp):
     """Обращаемся к серверу Практикума и получаем ответ."""
     timestamp = current_timestamp or int(time.time())
     params = {'from_date': timestamp}
+    info_message = 'Начинаем запрос к API'
+    logger.info(info_message)
     try:
         response = requests.get(ENDPOINT, headers=HEADERS, params=params)
         if response.status_code != HTTPStatus.OK:
             message = (f'Эндпоинт {ENDPOINT} недоступен. '
                        f'Код ответа: {response.status_code}')
-            logger.error(message)
             raise EndpointError(message)
         return response.json()
     except requests.exceptions.RequestException as error:
-        logger.critical(error)
         raise RequestExceptionError(error)
 
 
 def check_response(response):
     """Проверяем, собержит ли ответ ожидаемую информацию."""
-    try:
-        hw_list = response['homeworks']
-    except KeyError as error:
-        message = f'Неверное значение ключа homeworks: {error}'
+    if not isinstance(response, dict):
+        message = f'Объект {response} не является словарем'
         logger.error(message)
-        raise DictKeysError(message)
-    if hw_list is None:
-        message = 'Словарь не найден'
+        raise TypeError(message)
+    elif not isinstance(response.get('homeworks'), list):
+        message = 'Объект "homeworks" не является списком'
         logger.error(message)
-        raise DictNoneError(message)
-    if type(hw_list) != list:
-        message = f'Объект {hw_list} не является списком'
-        logger.error(message)
-        raise NotListError(message)
-    return response['homeworks']
+        raise TypeError(message)
+    else:
+        homeworks = response.get('homeworks')
+        if not homeworks:
+            message = 'Не передан параметр homework'
+            logger.error(message)
+            raise HomeworksNotFound(message)
+        return homeworks
 
 
 def parse_status(homework):
     """Присваеваем статус домашке."""
-    homework_name = homework['homework_name']
-    homework_status = homework['status']
-    if homework_status == 'approved':
-        verdict = HOMEWORK_STATUSES['approved']
-    elif homework_status == 'reviewing':
-        verdict = HOMEWORK_STATUSES['reviewing']
+    if 'homework_name' not in homework:
+        raise KeyError('Отсутствует ключ "homework_name" в ответе API')
+    elif 'status' not in homework:
+        raise KeyError('Отсутствует ключ "status" в ответе API')
     else:
-        verdict = HOMEWORK_STATUSES['rejected']
-    if homework_status not in HOMEWORK_STATUSES:
-        message = 'Статус работы не опознан'
-        logger.error(message)
-        raise HomeworkStatusError(message)
-    return f'Изменился статус проверки работы "{homework_name}". {verdict}'
+        homework_name = homework.get('homework_name')
+        homework_status = homework.get('status')
+        if homework_status in HOMEWORK_STATUSES:
+            verdict = HOMEWORK_STATUSES.get(homework_status)
+        else:
+            raise KeyError('Статус работы не опознан')
+        return f'Изменился статус проверки работы "{homework_name}". {verdict}'
 
 
 def check_tokens():
     """Проверяем, есть ли переменные окружения."""
-    if not PRACTICUM_TOKEN:
-        message = ("Отсутствует обязательная переменная окружения: "
-                   "'PRACTICUM_TOKEN'")
-        logger.critical(message)
-        return False
-    if not TELEGRAM_TOKEN:
-        message = ("Отсутствует обязательная переменная окружения: "
-                   "'TELEGRAM_TOKEN'")
-        logger.critical(message)
-        return False
-    if not TELEGRAM_CHAT_ID:
-        message = ("Отсутствует обязательная переменная окружения: "
-                   "'TELEGRAM_CHAT_ID'")
-        logger.critical(message)
-        return False
-    else:
-        message = 'Все обязательные переменные окружения найдены'
-        logger.info(message)
-        return True
+    return all((PRACTICUM_TOKEN, TELEGRAM_TOKEN, TELEGRAM_CHAT_ID))
 
 
 def main():
     """Основная логика работы бота."""
     status = ''
+    check_tokens()
     bot = Bot(token=TELEGRAM_TOKEN)
     current_timestamp = int(time.time())
-    check_tokens()
-
     while True:
         try:
             response = get_api_answer(current_timestamp)
@@ -144,13 +122,11 @@ def main():
                 message = parse_status(homework[0])
                 send_message(bot, message)
             current_timestamp = int(time.time())
-            time.sleep(RETRY_TIME)
-
         except Exception as error:
             message = f'Сбой в работе программы: {error}'
             logger.critical(message)
+        finally:
             time.sleep(RETRY_TIME)
-            raise MainFuncError(message)
 
 
 if __name__ == '__main__':
