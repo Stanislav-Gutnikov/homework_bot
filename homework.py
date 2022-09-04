@@ -45,7 +45,6 @@ def send_message(bot, message):
     try:
         bot.send_message(TELEGRAM_CHAT_ID, message)
     except TelegramMessageError as error:
-        logger.critical(error)
         raise TelegramMessageError(error)
     info_message = f'Сообщение "{message}" отправлено'
     logger.info(info_message)
@@ -59,48 +58,42 @@ def get_api_answer(current_timestamp):
     logger.info(info_message)
     try:
         response = requests.get(ENDPOINT, headers=HEADERS, params=params)
-        if response.status_code != HTTPStatus.OK:
-            message = (f'Эндпоинт {ENDPOINT} недоступен. '
-                       f'Код ответа: {response.status_code}')
-            raise EndpointError(message)
-        return response.json()
     except requests.exceptions.RequestException as error:
         raise RequestExceptionError(error)
+    if response.status_code != HTTPStatus.OK:
+        message = (f'Эндпоинт {ENDPOINT} недоступен. '
+                   f'Код ответа: {response.status_code}')
+        raise EndpointError(message)
+    return response.json()
 
 
 def check_response(response):
     """Проверяем, собержит ли ответ ожидаемую информацию."""
     if not isinstance(response, dict):
         message = f'Объект {response} не является словарем'
-        logger.error(message)
         raise TypeError(message)
-    elif not isinstance(response.get('homeworks'), list):
+    if not isinstance(response.get('homeworks'), list):
         message = 'Объект "homeworks" не является списком'
-        logger.error(message)
         raise TypeError(message)
-    else:
-        homeworks = response.get('homeworks')
-        if not homeworks:
-            message = 'Не передан параметр homework'
-            logger.error(message)
-            raise HomeworksNotFound(message)
-        return homeworks
+    homeworks = response.get('homeworks')
+    if not homeworks:
+        message = 'Не передан параметр homework'
+        raise HomeworksNotFound(message)
+    return homeworks
 
 
 def parse_status(homework):
     """Присваеваем статус домашке."""
     if 'homework_name' not in homework:
         raise KeyError('Отсутствует ключ "homework_name" в ответе API')
-    elif 'status' not in homework:
+    if 'status' not in homework:
         raise KeyError('Отсутствует ключ "status" в ответе API')
-    else:
-        homework_name = homework.get('homework_name')
-        homework_status = homework.get('status')
-        if homework_status in HOMEWORK_STATUSES:
-            verdict = HOMEWORK_STATUSES.get(homework_status)
-        else:
-            raise KeyError('Статус работы не опознан')
-        return f'Изменился статус проверки работы "{homework_name}". {verdict}'
+    homework_name = homework.get('homework_name')
+    homework_status = homework.get('status')
+    if homework_status not in HOMEWORK_STATUSES:
+        raise KeyError('Статус работы не опознан')
+    verdict = HOMEWORK_STATUSES.get(homework_status)
+    return f'Изменился статус проверки работы "{homework_name}". {verdict}'
 
 
 def check_tokens():
@@ -121,6 +114,9 @@ def main():
             if homework and status != homework[0]['status']:
                 message = parse_status(homework[0])
                 send_message(bot, message)
+            else:
+                message = 'Новых заданий не обнаружено'
+                logger.info(message)
             current_timestamp = int(time.time())
         except Exception as error:
             message = f'Сбой в работе программы: {error}'
